@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+*.prg
+*.iq
+
+# IDE and editor configuration
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
