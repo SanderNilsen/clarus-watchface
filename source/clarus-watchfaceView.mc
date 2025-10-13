@@ -23,7 +23,12 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         Graphics.FONT_SMALL
     ];
 
-    const DATE_FONT = Graphics.FONT_SMALL;
+    // Smaller date font + tight spacing controls
+    const DATE_FONT = Graphics.FONT_TINY;
+    const DATE_SPACING_RATIO = 0.05; // % of time font height
+    const DATE_MIN_SPACING   = 2.0;  // minimum pixels
+    const DATE_NUDGE         = -1.0; // pull date 1px closer
+
     const TIME_MARGIN = 4;
     const SECONDS_RING_THICKNESS = 6.0;
     const SECONDS_RING_BASE_COLOR = Graphics.COLOR_DK_GRAY;
@@ -62,8 +67,7 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         WatchUi.requestUpdate();
     }
 
-    function onLayout(dc as Dc) as Void {
-    }
+    function onLayout(dc as Dc) as Void {}
 
     function onUpdate(dc as Dc) as Void {
         var clockTime = System.getClockTime();
@@ -110,7 +114,11 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         var dateText = buildDateString();
         var dateHeight = dc.getFontHeight(DATE_FONT);
         var dateJustify = Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER;
-        var spacing = 12.0;
+
+        // Tighter gap between date and time
+        var spacing = timeHeight * DATE_SPACING_RATIO;
+        if (spacing < DATE_MIN_SPACING) { spacing = DATE_MIN_SPACING; }
+        spacing = (spacing + DATE_NUDGE > 0.0) ? (spacing + DATE_NUDGE) : 0.0;
 
         var timeCenterY = height / 2.0;
         var dateCenterY = timeCenterY - (timeHeight / 2.0) - spacing - (dateHeight / 2.0);
@@ -135,7 +143,7 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         dc.setColor(Graphics.COLOR_RED, BG_COLOR);
         dc.drawText(centerX, timeCenterY, timeFont, minuteText, minuteJustify);
 
-        // This keeps the seconds ring animated; remove if you want once-per-minute updates to save battery
+        // Keep if you want animated seconds ring; remove to save battery
         if (!mIsInSleep) {
             WatchUi.requestUpdate();
         }
@@ -162,7 +170,6 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
 
         for (var i = 0; i < TIME_FONTS.size(); i += 1) {
             var f = TIME_FONTS[i];
-
             var dimsH = dc.getTextDimensions("88", f);
             var dimsM = dc.getTextDimensions("88", f);
             var total = dimsH[0] + dimsM[0]; // sum of widths
@@ -179,20 +186,18 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         var info = Time.Gregorian.info(Time.now(), Time.FORMAT_SHORT);
         if (info == null) { return ""; }
 
-        // day_of_week: 1=Sun ... 7=Sat  → convert to 0-based index
+        // day_of_week: 1=Sun ... 7=Sat → convert to 0-based index
         var dow = info.day_of_week;
         if (dow == null) { dow = 1; } // default to Sunday
         var dayIndex = (dow - 1) % DAY_COUNT;
         if (dayIndex < 0) { dayIndex += DAY_COUNT; }
 
         var dayName = DAY_ABBREVIATIONS[dayIndex];
-
         var dayValue = info.day;
         if (dayValue == null || dayValue <= 0 || dayValue > 31) { dayValue = 1; }
 
         return dayName + " " + dayValue.format("%02d");
     }
-
 
     function drawSecondsRing(dc, centerX, centerY, innerRadius, outerRadius, seconds) {
         if (outerRadius <= 0.0) { return; }
