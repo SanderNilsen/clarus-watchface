@@ -2,6 +2,8 @@ import Toybox.Graphics;
 import Toybox.System;
 import Toybox.Time;
 import Toybox.WatchUi;
+import Toybox.Math;
+import Toybox.Lang;
 
 class clarus_watchfaceView extends WatchUi.WatchFace {
 
@@ -10,7 +12,17 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
 
     const BG_COLOR = Graphics.COLOR_BLACK;
     const FG_COLOR = Graphics.COLOR_WHITE;
-    const TIME_FONT_OPTIONS = [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL];
+
+    const TIME_FONTS = [
+        Graphics.FONT_NUMBER_THAI_HOT,   // huge numeric
+        Graphics.FONT_NUMBER_HOT,        // large numeric
+        Graphics.FONT_NUMBER_MEDIUM,     // medium numeric
+        Graphics.FONT_NUMBER_MILD,       // normal numeric
+        Graphics.FONT_LARGE,             // fallback
+        Graphics.FONT_MEDIUM,
+        Graphics.FONT_SMALL
+    ];
+
     const DATE_FONT = Graphics.FONT_SMALL;
     const TIME_MARGIN = 4;
     const SECONDS_RING_THICKNESS = 6.0;
@@ -56,14 +68,12 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
     function onUpdate(dc as Dc) as Void {
         var clockTime = System.getClockTime();
 
-        // clockTime is guaranteed to be non-null, so no need to check for null.
-
         var minuteValue = clockTime.min;
         if (minuteValue != mLastMinute) {
             mLastMinute = minuteValue;
         }
 
-        var width = dc.getWidth();
+        var width  = dc.getWidth();
         var height = dc.getHeight();
         var centerX = width / 2.0;
         var centerY = height / 2.0;
@@ -72,9 +82,7 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         dc.clear();
 
         var seconds = clockTime.sec;
-        if (seconds == null) {
-            seconds = 0;
-        }
+        if (seconds == null) { seconds = 0; }
 
         var minSide = (width < height) ? width : height;
         var maxRadius = minSide / 2.0 - TIME_MARGIN;
@@ -84,9 +92,7 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         }
         var ringOuterRadius = maxRadius;
         var ringInnerRadius = ringOuterRadius - SECONDS_RING_THICKNESS;
-        if (ringInnerRadius < 0.0) {
-            ringInnerRadius = 0.0;
-        }
+        if (ringInnerRadius < 0.0) { ringInnerRadius = 0.0; }
 
         drawSecondsRing(dc, centerX, centerY, ringInnerRadius, ringOuterRadius, seconds);
 
@@ -94,10 +100,12 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         var hourText = timeParts[0];
         var minuteText = timeParts[1];
 
-        var timeFont = selectTimeFont(dc, width, hourText + minuteText);
+        // Pick the largest font that fits using REAL text width (stable "88"+"88" probe)
+        var timeFont = selectTimeFont(dc, width);
+
         var timeHeight = dc.getFontHeight(timeFont);
-        var hourJustify = Graphics.TEXT_JUSTIFY_RIGHT | Graphics.TEXT_JUSTIFY_VCENTER;
-        var minuteJustify = Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER;
+        var hourJustify   = Graphics.TEXT_JUSTIFY_RIGHT  | Graphics.TEXT_JUSTIFY_VCENTER;
+        var minuteJustify = Graphics.TEXT_JUSTIFY_LEFT   | Graphics.TEXT_JUSTIFY_VCENTER;
 
         var dateText = buildDateString();
         var dateHeight = dc.getFontHeight(DATE_FONT);
@@ -117,30 +125,28 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
             timeCenterY = height - (timeHeight / 2.0);
         }
 
+        // Date (above)
         dc.setColor(FG_COLOR, BG_COLOR);
         dc.drawText(centerX, dateCenterY, DATE_FONT, dateText, dateJustify);
 
+        // Time (hours in white, minutes in red)
         dc.setColor(FG_COLOR, BG_COLOR);
         dc.drawText(centerX, timeCenterY, timeFont, hourText, hourJustify);
         dc.setColor(Graphics.COLOR_RED, BG_COLOR);
         dc.drawText(centerX, timeCenterY, timeFont, minuteText, minuteJustify);
 
+        // This keeps the seconds ring animated; remove if you want once-per-minute updates to save battery
         if (!mIsInSleep) {
             WatchUi.requestUpdate();
         }
-
     }
 
     function buildTimeParts(clockTime) {
         var hour = clockTime.hour;
-        if (hour == null) {
-            hour = 0;
-        }
+        if (hour == null) { hour = 0; }
 
         var minute = clockTime.min;
-        if (minute == null) {
-            minute = 0;
-        }
+        if (minute == null) { minute = 0; }
 
         var hourString = hour.format("%02d");
         var minuteString = minute.format("%02d");
@@ -148,77 +154,50 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         return [hourString, minuteString];
     }
 
-    function selectTimeFont(dc, width, text) {
+    // Choose the largest font that fits using actual text measurement.
+    // Use "88" probe so chosen size doesn't jump with different digits.
+    function selectTimeFont(dc as Dc, width /* as Lang.Number */) {
         var maxWidth = width - (TIME_MARGIN * 2);
-        var chosenFont = TIME_FONT_OPTIONS[TIME_FONT_OPTIONS.size() - 1];
+        var chosen = TIME_FONTS[TIME_FONTS.size() - 1]; // smallest fallback
 
-        var count = TIME_FONT_OPTIONS.size();
-        for (var i = 0; i < count; i += 1) {
-            var font = TIME_FONT_OPTIONS[i];
-            var textWidth = estimateTextWidth(dc, font, text);
+        for (var i = 0; i < TIME_FONTS.size(); i += 1) {
+            var f = TIME_FONTS[i];
 
-            if (textWidth <= maxWidth) {
-                chosenFont = font;
+            var dimsH = dc.getTextDimensions("88", f);
+            var dimsM = dc.getTextDimensions("88", f);
+            var total = dimsH[0] + dimsM[0]; // sum of widths
+
+            if (total <= maxWidth) {
+                chosen = f;
                 break;
             }
         }
-
-        return chosenFont;
-    }
-
-    function estimateTextWidth(dc, font, text) {
-        var fontHeight = dc.getFontHeight(font);
-        var charCount = text.length();
-        if (charCount <= 0) {
-            return 0;
-        }
-
-        var approxWidth = charCount * fontHeight * 6 / 10;
-        return approxWidth;
+        return chosen;
     }
 
     function buildDateString() {
         var info = Time.Gregorian.info(Time.now(), Time.FORMAT_SHORT);
+        if (info == null) { return ""; }
 
-        if (info == null) {
-            return "";
-        }
-
-        var dayIndex = info.day_of_week;
-        if (dayIndex == null) {
-            dayIndex = 0;
-        } else {
-            dayIndex = dayIndex % DAY_COUNT;
-        }
-
-        if (dayIndex < 0) {
-            dayIndex = 0;
-        }
+        // day_of_week: 1=Sun ... 7=Sat  → convert to 0-based index
+        var dow = info.day_of_week;
+        if (dow == null) { dow = 1; } // default to Sunday
+        var dayIndex = (dow - 1) % DAY_COUNT;
+        if (dayIndex < 0) { dayIndex += DAY_COUNT; }
 
         var dayName = DAY_ABBREVIATIONS[dayIndex];
+
         var dayValue = info.day;
+        if (dayValue == null || dayValue <= 0 || dayValue > 31) { dayValue = 1; }
 
-        if (dayValue == null || dayValue <= 0 || dayValue > 31) {
-            dayValue = 1;
-        }
-
-        var dayString = dayValue.format("%02d");
-
-        return dayName + " " + dayString;
+        return dayName + " " + dayValue.format("%02d");
     }
 
+
     function drawSecondsRing(dc, centerX, centerY, innerRadius, outerRadius, seconds) {
-        if (outerRadius <= 0.0) {
-            return;
-        }
-
-        if (innerRadius < 0.0) {
-            innerRadius = 0.0;
-        }
-
-        if (seconds < 0 || seconds > 59) {
-            seconds = 0;
-        }
+        if (outerRadius <= 0.0) { return; }
+        if (innerRadius < 0.0) { innerRadius = 0.0; }
+        if (seconds < 0 || seconds > 59) { seconds = 0; }
 
         for (var i = 0; i < 60; i += 1) {
             var angle = (i / 60.0) * (2.0 * Math.PI) - (Math.PI / 2.0);
