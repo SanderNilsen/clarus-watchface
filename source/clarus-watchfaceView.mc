@@ -12,29 +12,42 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
     const FG_COLOR = Graphics.COLOR_WHITE;
     const TIME_FONT_OPTIONS = [Graphics.FONT_LARGE, Graphics.FONT_MEDIUM, Graphics.FONT_SMALL];
     const DATE_FONT = Graphics.FONT_SMALL;
-    const TIME_MARGIN = 8;
+    const TIME_MARGIN = 4;
+    const SECONDS_RING_THICKNESS = 6.0;
+    const SECONDS_RING_BASE_COLOR = Graphics.COLOR_DK_GRAY;
+    const SECONDS_RING_ACTIVE_COLOR = Graphics.COLOR_RED;
 
     var mLastMinute;
+    var mIsInSleep;
 
     function initialize() {
         WatchFace.initialize();
         mLastMinute = -1;
+        mIsInSleep = false;
     }
 
     function onShow() as Void {
         mLastMinute = -1;
+        mIsInSleep = false;
+        if (!mIsInSleep) {
+            WatchUi.requestUpdate();
+        }
     }
 
     function onHide() as Void {
         mLastMinute = -1;
+        mIsInSleep = true;
     }
 
     function onEnterSleep() as Void {
         mLastMinute = -1;
+        mIsInSleep = true;
     }
 
     function onExitSleep() as Void {
         mLastMinute = -1;
+        mIsInSleep = false;
+        WatchUi.requestUpdate();
     }
 
     function onLayout(dc as Dc) as Void {
@@ -46,13 +59,9 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         // clockTime is guaranteed to be non-null, so no need to check for null.
 
         var minuteValue = clockTime.min;
-        // No need to check for null as minuteValue is guaranteed to be non-null.
-
-        if (minuteValue == mLastMinute) {
-            return;
+        if (minuteValue != mLastMinute) {
+            mLastMinute = minuteValue;
         }
-
-        mLastMinute = minuteValue;
 
         var width = dc.getWidth();
         var height = dc.getHeight();
@@ -61,6 +70,25 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
 
         dc.setColor(BG_COLOR, BG_COLOR);
         dc.clear();
+
+        var seconds = clockTime.sec;
+        if (seconds == null) {
+            seconds = 0;
+        }
+
+        var minSide = (width < height) ? width : height;
+        var maxRadius = minSide / 2.0 - TIME_MARGIN;
+        if (maxRadius < 12.0) {
+            var minSideAlt = (width < height) ? width : height;
+            maxRadius = minSideAlt / 2.0 - 4.0;
+        }
+        var ringOuterRadius = maxRadius;
+        var ringInnerRadius = ringOuterRadius - SECONDS_RING_THICKNESS;
+        if (ringInnerRadius < 0.0) {
+            ringInnerRadius = 0.0;
+        }
+
+        drawSecondsRing(dc, centerX, centerY, ringInnerRadius, ringOuterRadius, seconds);
 
         var timeParts = buildTimeParts(clockTime);
         var hourText = timeParts[0];
@@ -96,6 +124,10 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         dc.drawText(centerX, timeCenterY, timeFont, hourText, hourJustify);
         dc.setColor(Graphics.COLOR_RED, BG_COLOR);
         dc.drawText(centerX, timeCenterY, timeFont, minuteText, minuteJustify);
+
+        if (!mIsInSleep) {
+            WatchUi.requestUpdate();
+        }
 
     }
 
@@ -173,5 +205,38 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         var dayString = dayValue.format("%02d");
 
         return dayName + " " + dayString;
+    }
+
+    function drawSecondsRing(dc, centerX, centerY, innerRadius, outerRadius, seconds) {
+        if (outerRadius <= 0.0) {
+            return;
+        }
+
+        if (innerRadius < 0.0) {
+            innerRadius = 0.0;
+        }
+
+        if (seconds < 0 || seconds > 59) {
+            seconds = 0;
+        }
+
+        for (var i = 0; i < 60; i += 1) {
+            var angle = (i / 60.0) * (2.0 * Math.PI) - (Math.PI / 2.0);
+            var cosValue = Math.cos(angle);
+            var sinValue = Math.sin(angle);
+
+            var innerX = centerX + cosValue * innerRadius;
+            var innerY = centerY + sinValue * innerRadius;
+            var outerX = centerX + cosValue * outerRadius;
+            var outerY = centerY + sinValue * outerRadius;
+
+            if (i <= seconds) {
+                dc.setColor(SECONDS_RING_ACTIVE_COLOR, BG_COLOR);
+            } else {
+                dc.setColor(SECONDS_RING_BASE_COLOR, BG_COLOR);
+            }
+
+            dc.drawLine(innerX, innerY, outerX, outerY);
+        }
     }
 }
