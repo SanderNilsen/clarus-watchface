@@ -1,4 +1,7 @@
 import Toybox.Graphics;
+import Toybox.Activity;
+import Toybox.ActivityMonitor;
+import Toybox.SensorHistory;
 import Toybox.System;
 import Toybox.Time;
 import Toybox.WatchUi;
@@ -28,6 +31,10 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
     const DATE_SPACING_RATIO = 0.05; // % of time font height
     const DATE_MIN_SPACING   = 2.0;  // minimum pixels
     const DATE_NUDGE         = -1.0; // pull date 1px closer
+    const HEART_RATE_FONT = Graphics.FONT_TINY;
+    const HEART_RATE_SPACING_RATIO = 0.08; // % of time font height
+    const HEART_RATE_MIN_SPACING   = 4.0;  // minimum pixels
+    const DATA_ROW_SIDE_MARGIN_RATIO = 0.22; // % of display width from each edge
 
     const TIME_MARGIN = 4;
     const SECONDS_RING_THICKNESS = 6.0;
@@ -115,18 +122,36 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         var dateHeight = dc.getFontHeight(DATE_FONT);
         var dateJustify = Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER;
 
+        var heartRateText = buildHeartRateString();
+        var heartRateHeight = dc.getFontHeight(HEART_RATE_FONT);
+        var heartRateJustify = Graphics.TEXT_JUSTIFY_RIGHT | Graphics.TEXT_JUSTIFY_VCENTER;
+        var stepsText = buildStepsString();
+        var stepsJustify = Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER;
+
         // Tighter gap between date and time
         var spacing = timeHeight * DATE_SPACING_RATIO;
         if (spacing < DATE_MIN_SPACING) { spacing = DATE_MIN_SPACING; }
         spacing = (spacing + DATE_NUDGE > 0.0) ? (spacing + DATE_NUDGE) : 0.0;
 
+        var heartRateSpacing = timeHeight * HEART_RATE_SPACING_RATIO;
+        if (heartRateSpacing < HEART_RATE_MIN_SPACING) { heartRateSpacing = HEART_RATE_MIN_SPACING; }
+
         var timeCenterY = height / 2.0;
         var dateCenterY = timeCenterY - (timeHeight / 2.0) - spacing - (dateHeight / 2.0);
+        var heartRateCenterY = timeCenterY + (timeHeight / 2.0) + heartRateSpacing + (heartRateHeight / 2.0);
 
         if (dateCenterY < dateHeight / 2.0) {
             var adjust = (dateHeight / 2.0) - dateCenterY;
             dateCenterY += adjust;
             timeCenterY += adjust;
+            heartRateCenterY += adjust;
+        }
+
+        if (heartRateCenterY > height - (heartRateHeight / 2.0)) {
+            var heartRateAdjust = heartRateCenterY - (height - (heartRateHeight / 2.0));
+            dateCenterY -= heartRateAdjust;
+            timeCenterY -= heartRateAdjust;
+            heartRateCenterY -= heartRateAdjust;
         }
 
         if (timeCenterY > height - (timeHeight / 2.0)) {
@@ -142,6 +167,12 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         dc.drawText(centerX, timeCenterY, timeFont, hourText, hourJustify);
         dc.setColor(Graphics.COLOR_RED, BG_COLOR);
         dc.drawText(centerX, timeCenterY, timeFont, minuteText, minuteJustify);
+
+        // Steps and heart rate (below)
+        var dataRowInset = width * DATA_ROW_SIDE_MARGIN_RATIO;
+        dc.setColor(FG_COLOR, BG_COLOR);
+        dc.drawText(dataRowInset, heartRateCenterY, HEART_RATE_FONT, stepsText, stepsJustify);
+        dc.drawText(width - dataRowInset, heartRateCenterY, HEART_RATE_FONT, heartRateText, heartRateJustify);
 
         // Keep if you want animated seconds ring; remove to save battery
         if (!mIsInSleep) {
@@ -160,6 +191,67 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         var minuteString = minute.format("%02d");
 
         return [hourString, minuteString];
+    }
+
+    function buildHeartRateString() {
+        var heartRate = getCurrentHeartRate();
+        if (heartRate == null || heartRate <= 0) {
+            return "HR --";
+        }
+
+        return "HR " + heartRate.format("%d");
+    }
+
+    function buildStepsString() {
+        var steps = getCurrentSteps();
+        if (steps == null || steps < 0) {
+            return "ST --";
+        }
+
+        return "ST " + formatCompactNumber(steps);
+    }
+
+    function getCurrentSteps() {
+        var activityMonitorInfo = ActivityMonitor.getInfo();
+        if (activityMonitorInfo != null && (activityMonitorInfo has :steps)) {
+            return activityMonitorInfo.steps;
+        }
+
+        return null;
+    }
+
+    function formatCompactNumber(value) {
+        if (value >= 10000) {
+            return (value / 1000).format("%d") + "K";
+        }
+
+        return value.format("%d");
+    }
+
+    function getCurrentHeartRate() {
+        var activityInfo = Activity.getActivityInfo();
+        if (activityInfo != null && (activityInfo has :currentHeartRate)) {
+            var activityHeartRate = activityInfo.currentHeartRate;
+            if (activityHeartRate != null && activityHeartRate > 0) {
+                return activityHeartRate;
+            }
+        }
+
+        if ((Toybox has :SensorHistory) && (SensorHistory has :getHeartRateHistory)) {
+            var heartRateIterator = SensorHistory.getHeartRateHistory({
+                :period => 1,
+                :order => SensorHistory.ORDER_NEWEST_FIRST
+            });
+
+            if (heartRateIterator != null) {
+                var heartRateSample = heartRateIterator.next();
+                if (heartRateSample != null && heartRateSample.data != null && heartRateSample.data > 0) {
+                    return heartRateSample.data;
+                }
+            }
+        }
+
+        return null;
     }
 
     // Choose the largest font that fits using actual text measurement.
