@@ -34,7 +34,10 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
     const HEART_RATE_FONT = Graphics.FONT_TINY;
     const HEART_RATE_SPACING_RATIO = 0.08; // % of time font height
     const HEART_RATE_MIN_SPACING   = 4.0;  // minimum pixels
-    const DATA_ROW_SIDE_MARGIN_RATIO = 0.22; // % of display width from each edge
+    const DATA_ROW_ICON_RATIO = 0.58;       // % of data font height
+    const DATA_ROW_ICON_MIN_SIZE = 5.0;     // minimum pixels
+    const DATA_ROW_ICON_GAP = 3.0;
+    const DATA_ROW_ITEM_GAP = 8.0;
 
     const TIME_MARGIN = 4;
     const SECONDS_RING_THICKNESS = 6.0;
@@ -124,9 +127,7 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
 
         var heartRateText = buildHeartRateString();
         var heartRateHeight = dc.getFontHeight(HEART_RATE_FONT);
-        var heartRateJustify = Graphics.TEXT_JUSTIFY_RIGHT | Graphics.TEXT_JUSTIFY_VCENTER;
         var stepsText = buildStepsString();
-        var stepsJustify = Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER;
 
         // Tighter gap between date and time
         var spacing = timeHeight * DATE_SPACING_RATIO;
@@ -169,10 +170,7 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         dc.drawText(centerX, timeCenterY, timeFont, minuteText, minuteJustify);
 
         // Steps and heart rate (below)
-        var dataRowInset = width * DATA_ROW_SIDE_MARGIN_RATIO;
-        dc.setColor(FG_COLOR, BG_COLOR);
-        dc.drawText(dataRowInset, heartRateCenterY, HEART_RATE_FONT, stepsText, stepsJustify);
-        dc.drawText(width - dataRowInset, heartRateCenterY, HEART_RATE_FONT, heartRateText, heartRateJustify);
+        drawDataRow(dc, centerX, heartRateCenterY, stepsText, heartRateText);
 
         // Keep if you want animated seconds ring; remove to save battery
         if (!mIsInSleep) {
@@ -196,19 +194,19 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
     function buildHeartRateString() {
         var heartRate = getCurrentHeartRate();
         if (heartRate == null || heartRate <= 0) {
-            return "HR --";
+            return "--";
         }
 
-        return "HR " + heartRate.format("%d");
+        return heartRate.format("%d");
     }
 
     function buildStepsString() {
         var steps = getCurrentSteps();
         if (steps == null || steps < 0) {
-            return "ST --";
+            return "--";
         }
 
-        return "ST " + formatCompactNumber(steps);
+        return formatCompactNumber(steps);
     }
 
     function getCurrentSteps() {
@@ -252,6 +250,53 @@ class clarus_watchfaceView extends WatchUi.WatchFace {
         }
 
         return null;
+    }
+
+    function drawDataRow(dc, centerX, centerY, stepsText, heartRateText) {
+        var iconSize = dc.getFontHeight(HEART_RATE_FONT) * DATA_ROW_ICON_RATIO;
+        if (iconSize < DATA_ROW_ICON_MIN_SIZE) { iconSize = DATA_ROW_ICON_MIN_SIZE; }
+
+        var stepsWidth = dc.getTextDimensions(stepsText, HEART_RATE_FONT)[0];
+        var heartRateWidth = dc.getTextDimensions(heartRateText, HEART_RATE_FONT)[0];
+        var totalWidth = iconSize + DATA_ROW_ICON_GAP + stepsWidth +
+                         DATA_ROW_ITEM_GAP +
+                         iconSize + DATA_ROW_ICON_GAP + heartRateWidth;
+        var x = centerX - (totalWidth / 2.0);
+        var textJustify = Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER;
+
+        drawStepsIcon(dc, x, centerY, iconSize);
+        x += iconSize + DATA_ROW_ICON_GAP;
+        dc.setColor(FG_COLOR, BG_COLOR);
+        dc.drawText(x, centerY, HEART_RATE_FONT, stepsText, textJustify);
+
+        x += stepsWidth + DATA_ROW_ITEM_GAP;
+        drawHeartIcon(dc, x, centerY, iconSize);
+        x += iconSize + DATA_ROW_ICON_GAP;
+        dc.setColor(FG_COLOR, BG_COLOR);
+        dc.drawText(x, centerY, HEART_RATE_FONT, heartRateText, textJustify);
+    }
+
+    function drawStepsIcon(dc, x, centerY, size) {
+        var top = centerY - (size / 2.0);
+        var radius = size / 4.0;
+
+        dc.setColor(FG_COLOR, BG_COLOR);
+        dc.fillCircle(x + (size * 0.34), top + (size * 0.34), radius);
+        dc.fillCircle(x + (size * 0.66), top + (size * 0.66), radius);
+    }
+
+    function drawHeartIcon(dc, x, centerY, size) {
+        var top = centerY - (size / 2.0);
+        var radius = size / 4.0;
+
+        dc.setColor(Graphics.COLOR_RED, BG_COLOR);
+        dc.fillCircle(x + (size * 0.34), top + (size * 0.36), radius);
+        dc.fillCircle(x + (size * 0.66), top + (size * 0.36), radius);
+        dc.fillPolygon([
+            [x + (size * 0.10), top + (size * 0.42)],
+            [x + (size * 0.90), top + (size * 0.42)],
+            [x + (size * 0.50), top + size]
+        ]);
     }
 
     // Choose the largest font that fits using actual text measurement.
